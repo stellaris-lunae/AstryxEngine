@@ -1,4 +1,4 @@
-import { S_AstryxMain } from "./main";
+import { Astryx } from "./main";
 
 namespace ServerToClient {
 	export interface Remotes {}
@@ -10,8 +10,8 @@ namespace ClientToServer {
 	export interface Functions {}
 }
 
-export const GlobalSignals = S_AstryxMain.Network.make_signals<ServerToClient.Remotes, ClientToServer.Remotes>();
-export const GlobalFunctions = S_AstryxMain.Network.make_remote_functions<
+export const GlobalSignals = Astryx.Network.make_signals<ServerToClient.Remotes, ClientToServer.Remotes>();
+export const GlobalFunctions = Astryx.Network.make_remote_functions<
 	ServerToClient.Functions,
 	ClientToServer.Functions
 >();

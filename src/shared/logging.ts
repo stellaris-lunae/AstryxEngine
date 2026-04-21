@@ -5,7 +5,7 @@ class C_Logger {
 		const first = string.match(source, "^([^.]+)")[0];
 		const last = string.match(source, "([^.]+)$")[0];
 		const short_source = first !== last ? `${first}.${last}` : first;
-		print(`\n${prefix} [${os.date("%I:%M")}] [${short_source}:${line}]`, ...args);
+		print(`${prefix} [${os.date("%I:%M")}] [${short_source}:${line}]`, ...args);
 	};
 
 	log_info = (...args: unknown[]) => {

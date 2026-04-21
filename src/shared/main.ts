@@ -3,9 +3,12 @@ import S_AstryxLogger from "./logging";
 import Signal from "@rbxts/signal";
 import { Network } from "./network";
 import { C_Component } from "./components";
-import { C_Controller } from "./components/controller";
-import { C_Service } from "./components/service";
 import { C_Error, C_Result, C_Success } from "./result";
+import { C_Singleton } from "./singleton";
+import { C_Controller } from "./singleton/controller";
+import { I_Lifecycle } from "./typing";
+
+/** dying schizophrenic delusions of a C++ dev making a roblox game engine without a TS transformer **/
 
 type T_NetworkSignalMap<S, C> = {
 	[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void ? Network.C_Signal<A> : never;
@@ -43,6 +46,8 @@ class C_AstryxMain {
 
 	static intialized_buffers = {
 		components: false,
+		client_dawn: false,
+		server_dawn: false,
 	};
 
 	fully_intialized = () => {
@@ -66,6 +71,7 @@ class C_AstryxMain {
 	C_INTERNAL = class {
 		conns: Map<string, Signal> = new Map();
 		components: Array<[instance: Instance, components: Array<C_Component>]> = [];
+		singletons: Array<C_Singleton> = [];
 	};
 
 	/** @hidden */
@@ -121,30 +127,76 @@ class C_AstryxMain {
 	C_Engine = class {
 		private engine: C_AstryxMain;
 
-		constructor() {
-			this.engine = S_AstryxMain;
+		constructor(engine: C_AstryxMain) {
+			this.engine = engine;
 		}
 
-		Dawn(setupOpt: {
-			componentsFolder?: Folder;
+		Dawn(dawn_options: {
+			components_folder?: Folder;
 			services_folder?: Folder;
-			controllerFolder?: Folder;
+			controller_folder?: Folder;
 		}): Promise<C_Result> {
 			// common setup
+			const dawn_trace = debug.traceback("", 2).gsub("^%s+", "")[0].split("\n")[0];
+			S_AstryxLogger.log_info(`Dawn() called on ${RunService.IsClient() ? "clih" : "slih"}: > ${dawn_trace}`);
 
 			if (RunService.IsClient()) {
-				if (setupOpt.services_folder)
-					S_AstryxLogger.log_warn(
-						`Dawn({}.services_folder) is being used on the client: \n> ${debug.traceback("", 2).gsub("^%s+", "")[0]}`,
-					);
-
-				if (!setupOpt.controllerFolder) {
-					S_AstryxLogger.log_warn("bro where the fuck is your controller folder, im leaving.");
-					return Promise.reject(new C_Error("failed to find controller folder")) as Promise<C_Result>;
+				if (C_AstryxMain.intialized_buffers.client_dawn) {
+					S_AstryxLogger.log_error("Dawn() already called on client side, and just got called again");
+					return Promise.reject("Double-call of Dawn()") as Promise<C_Error>;
 				}
 
+				if (dawn_options.services_folder)
+					S_AstryxLogger.log_warn(
+						`Dawn({}.services_folder) is being used on the client: > ${debug.traceback("", 2).gsub("^%s+", "")[0]}`,
+					);
+
+				if (!dawn_options.controller_folder) {
+					S_AstryxLogger.log_warn("bro where the fuck is your controller folder(client), im leaving.");
+					return Promise.reject(new C_Error("no controller_folder in client's dawn")) as Promise<C_Result>;
+				}
+
+				if (dawn_options.controller_folder) {
+					dawn_options.controller_folder.GetChildren().forEach((controller_script) => {
+						if (controller_script.IsA("ModuleScript")) {
+							const script_class = require(controller_script) as new (e: T_AstryxMain) => C_Controller;
+							const new_controller = new script_class(Astryx);
+
+							if (!(new_controller instanceof C_Controller)) {
+								S_AstryxLogger.log_info(`${controller_script.Name} not instance of C_Controller`);
+								return Promise.reject(
+									new C_Error("script in controller wasn't instance of controller"),
+								);
+							}
+
+							S_AstryxLogger.log_info(`Made controller ${controller_script.Name}!`);
+							const lifecycle = new_controller as unknown as I_Lifecycle;
+							if (lifecycle.OnInit !== undefined) {
+								lifecycle.OnInit();
+								S_AstryxLogger.log_info(`Called ${controller_script.Name}.OnInit()`);
+							}
+
+							task.spawn(() => {
+								if (lifecycle.OnStart !== undefined) lifecycle.OnStart();
+								if (lifecycle.OnRender !== undefined)
+									RunService.RenderStepped.Connect((dt) => lifecycle.OnRender?.(dt));
+								if (lifecycle.OnTick !== undefined)
+									RunService.Heartbeat.Connect((dt) => lifecycle.OnTick?.(dt));
+
+								this.engine.INTERNAL.singletons.push(new_controller);
+							});
+						} else {
+							S_AstryxLogger.log_info(
+								`why is there a non-modulescript in your controller folder??? absolute schidiot shghghghh`,
+							);
+						}
+					});
+				}
+
+				C_AstryxMain.intialized_buffers.client_dawn = true;
 				return Promise.resolve(new C_Success("client ok"));
 			} else {
+				C_AstryxMain.intialized_buffers.server_dawn = true;
 				return Promise.resolve(new C_Success("server ok"));
 			}
 		}
@@ -154,8 +206,8 @@ class C_AstryxMain {
 	C_Components = class {
 		private engine: C_AstryxMain;
 
-		constructor() {
-			this.engine = S_AstryxMain;
+		constructor(engine: C_AstryxMain) {
+			this.engine = engine;
 		}
 
 		get_component<T extends C_Component>(instance: Instance): Promise<T | undefined> {
@@ -164,12 +216,19 @@ class C_AstryxMain {
 		}
 	};
 
-	/** please dont touch this unless you are really sure that you want to fuck up my spaghetti code **/
+	/** please dont touch this var unless you are really sure that you want to fuck up my spaghetti code **/
 	INTERNAL = new this.C_INTERNAL();
 
-	Engine = new this.C_Engine();
+	Engine = new this.C_Engine(this);
 	Network = new this.C_Network();
-	Components = new this.C_Components();
+	Components = new this.C_Components(this);
 }
 
-export const S_AstryxMain = new C_AstryxMain();
+export type T_AstryxMain = {
+	INTERNAL: InstanceType<C_AstryxMain["C_INTERNAL"]>;
+	Engine: InstanceType<C_AstryxMain["C_Engine"]>;
+	Network: InstanceType<C_AstryxMain["C_Network"]>;
+	Components: InstanceType<C_AstryxMain["C_Components"]>;
+};
+
+export const Astryx = new C_AstryxMain();

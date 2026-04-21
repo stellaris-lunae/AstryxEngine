@@ -28,6 +28,7 @@
   "dependencies": {
     "@rbxts/profile-store": "^1.0.3",
     "@rbxts/services": "^1.6.0",
-    "@rbxts/signal": "^1.1.1"
+    "@rbxts/signal": "^1.1.1",
+    "ts-patch": "^3.3.0"
   }
 }

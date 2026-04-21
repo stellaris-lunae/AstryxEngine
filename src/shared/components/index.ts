@@ -1,3 +1,3 @@
-import { Lifecycle } from "shared/typing";
+import { I_Lifecycle } from "shared/typing";
 
-export class C_Component implements Lifecycle {}
+export class C_Component implements I_Lifecycle {}
