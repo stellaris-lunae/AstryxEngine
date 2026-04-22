@@ -1,3 +1,5 @@
+import { $env } from "rbxts-transform-env";
+
 class C_Logger {
 	/** @hidden */
 	log_internal = (prefix: string, ...args: unknown[]) => {
@@ -9,6 +11,10 @@ class C_Logger {
 	};
 
 	log_info = (...args: unknown[]) => {
+		if ($env.string("DEVELOPMENT_LOGGING", "True") === "True") this.log_internal("[+]", ...args);
+	};
+
+	log_bypass_info = (...args: unknown[]) => {
 		this.log_internal("[+]", ...args);
 	};
 

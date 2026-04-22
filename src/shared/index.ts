@@ -8,7 +8,8 @@ import { C_Singleton } from "./singleton";
 import { C_Controller } from "./singleton/controller";
 import { I_Lifecycle } from "./typing";
 
-/** dying schizophrenic delusions of a C++ dev making a roblox game engine without a TS transformer **/
+/** dying schizophrenic delusions of a C++ dev making a roblox game engine without a TS transformer* **/
+/** typescript transformer is in the works though 🤫 **/
 
 type T_NetworkSignalMap<S, C> = {
 	[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void ? Network.C_Signal<A> : never;
@@ -28,17 +29,19 @@ class C_AstryxMain {
 	static NETWORK_FOLDER = (() => {
 		let ret: Folder;
 
+		const network_name = `ASTRYX.NETWORK`;
+
 		if (RunService.IsServer()) {
-			const net = ReplicatedStorage.FindFirstChild("NETWORK_ASTRYX");
+			const net = ReplicatedStorage.FindFirstChild(network_name);
 			if (!net) {
 				ret = new Instance("Folder");
-				ret.Name = "NETWORK_ASTRYX";
+				ret.Name = network_name;
 				ret.Parent = ReplicatedStorage;
 			} else {
 				ret = net as Folder;
 			}
 		} else {
-			ret = ReplicatedStorage.WaitForChild("NETWORK_ASTRYX") as Folder;
+			ret = ReplicatedStorage.WaitForChild(network_name) as Folder;
 		}
 
 		return ret;
@@ -156,42 +159,54 @@ class C_AstryxMain {
 					return Promise.reject(new C_Error("no controller_folder in client's dawn")) as Promise<C_Result>;
 				}
 
-				if (dawn_options.controller_folder) {
-					dawn_options.controller_folder.GetChildren().forEach((controller_script) => {
-						if (controller_script.IsA("ModuleScript")) {
-							const script_class = require(controller_script) as new (e: T_AstryxMain) => C_Controller;
-							const new_controller = new script_class(Astryx);
+				const timeprecontroller = os.clock();
+				dawn_options.controller_folder.GetChildren().forEach((controller_script) => {
+					if (controller_script.IsA("ModuleScript")) {
+						const script_class = require(controller_script) as new (e: T_AstryxMain) => C_Controller;
+						const new_controller = new script_class(Astryx);
 
-							if (!(new_controller instanceof C_Controller)) {
-								S_AstryxLogger.log_info(`${controller_script.Name} not instance of C_Controller`);
-								return Promise.reject(
-									new C_Error("script in controller wasn't instance of controller"),
+						if (!(new_controller instanceof C_Controller)) {
+							S_AstryxLogger.log_info(`${controller_script.Name} not instance of C_Controller`);
+							return Promise.reject(new C_Error("script in controller wasn't instance of controller"));
+						}
+
+						S_AstryxLogger.log_info(`Made controller ${controller_script.Name}!`);
+						const lifecycle = new_controller as unknown as I_Lifecycle;
+						if (lifecycle.OnInit !== undefined) {
+							lifecycle.OnInit();
+							S_AstryxLogger.log_info(`Called ${controller_script.Name}.OnInit()`);
+						}
+
+						task.spawn(() => {
+							if (lifecycle.OnStart !== undefined) {
+								lifecycle.OnStart();
+
+								S_AstryxLogger.log_info(`Called ${controller_script.Name}.OnStart()`);
+							}
+							if (lifecycle.OnRender !== undefined) {
+								RunService.RenderStepped.Connect((dt) => lifecycle.OnRender?.(dt));
+								S_AstryxLogger.log_info(
+									`Hooked ${controller_script.Name}.OnRender() into RenderStepped`,
 								);
 							}
-
-							S_AstryxLogger.log_info(`Made controller ${controller_script.Name}!`);
-							const lifecycle = new_controller as unknown as I_Lifecycle;
-							if (lifecycle.OnInit !== undefined) {
-								lifecycle.OnInit();
-								S_AstryxLogger.log_info(`Called ${controller_script.Name}.OnInit()`);
+							if (lifecycle.OnTick !== undefined) {
+								RunService.Heartbeat.Connect((dt) => lifecycle.OnTick?.(dt));
+								S_AstryxLogger.log_info(`Hooked ${controller_script.Name}.OnTick() into Heartbeat`);
 							}
 
-							task.spawn(() => {
-								if (lifecycle.OnStart !== undefined) lifecycle.OnStart();
-								if (lifecycle.OnRender !== undefined)
-									RunService.RenderStepped.Connect((dt) => lifecycle.OnRender?.(dt));
-								if (lifecycle.OnTick !== undefined)
-									RunService.Heartbeat.Connect((dt) => lifecycle.OnTick?.(dt));
+							this.engine.INTERNAL.singletons.push(new_controller);
+						});
+					} else {
+						S_AstryxLogger.log_info(
+							`why is there a non-modulescript in your controller folder??? absolute schidiot shghghghh`,
+						);
+					}
+				});
+				const timepostcontroller = os.clock();
 
-								this.engine.INTERNAL.singletons.push(new_controller);
-							});
-						} else {
-							S_AstryxLogger.log_info(
-								`why is there a non-modulescript in your controller folder??? absolute schidiot shghghghh`,
-							);
-						}
-					});
-				}
+				S_AstryxLogger.log_bypass_info(
+					`intializing controllers took ${math.floor((timepostcontroller - timeprecontroller) * 1000)}ms`,
+				);
 
 				C_AstryxMain.intialized_buffers.client_dawn = true;
 				return Promise.resolve(new C_Success("client ok"));

@@ -23,7 +23,7 @@
 					}
 				}
 			},
-			"TS": {
+			"ASTRYX.MAIN": {
 				"$path": "out/shared"
 			}
 		},

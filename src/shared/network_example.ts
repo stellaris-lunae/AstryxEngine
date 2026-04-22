@@ -1,4 +1,4 @@
-import { Astryx } from "./main";
+import { Astryx } from ".";
 
 namespace ServerToClient {
 	export interface Remotes {}
