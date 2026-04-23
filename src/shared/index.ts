@@ -1,12 +1,14 @@
 import { ReplicatedStorage, RunService } from "@rbxts/services";
 import S_AstryxLogger from "./logging";
 import Signal from "@rbxts/signal";
-import { Network } from "./network";
 import { C_Component } from "./components";
 import { C_Error, C_Result, C_Success } from "./result";
 import { C_Singleton } from "./singleton";
 import { C_Controller } from "./singleton/controller";
-import { I_Lifecycle } from "./typing";
+import { C_Service } from "./singleton/service";
+import { t } from "@rbxts/t";
+import { AstryxUserInterface } from "./ui";
+import { Network } from "./network";
 
 /** dying schizophrenic delusions of a C++ dev making a roblox game engine without a TS transformer* **/
 /** typescript transformer is in the works though 🤫 **/
@@ -56,7 +58,7 @@ class C_AstryxMain {
 	fully_intialized = () => {
 		let ret = false;
 
-		for (let [x, y] of pairs(C_AstryxMain.intialized_buffers)) {
+		for (let [_, y] of pairs(C_AstryxMain.intialized_buffers)) {
 			if (y === false) {
 				ret = false;
 				break;
@@ -91,18 +93,22 @@ class C_AstryxMain {
 			S_AstryxLogger.log_info("make_signals called");
 
 			const cache = new Map<string, Network.C_Signal<unknown[]>>();
-			const get_or_create = (key: string): Network.C_Signal<unknown[]> => {
+			const get_or_create = (key: unknown): Network.C_Signal<unknown[]> => {
+				if (!t.string(key)) {
+					error(`make_signals expected string key, got ${typeOf(key)}`);
+				}
+
 				if (!cache.has(key)) {
 					S_AstryxLogger.log_info(`make_signals: creating signal for "${key}"`);
 					cache.set(key, new Network.C_Signal(key, C_AstryxMain.NETWORK_FOLDER));
 				} else {
 					S_AstryxLogger.log_info(`make_signals: reusing signal for "${key}"`);
 				}
-				return cache.get(key) as Network.C_Signal<unknown[]>;
+				return cache.get(key)!;
 			};
 
 			return setmetatable({} as T_NetworkSignalMap<S, C>, {
-				__index: (_self: unknown, key: unknown) => get_or_create(key as string),
+				__index: (_self: unknown, key: unknown) => get_or_create(key),
 			}) as T_NetworkSignalMap<S, C>;
 		}
 
@@ -138,7 +144,7 @@ class C_AstryxMain {
 			components_folder?: Folder;
 			services_folder?: Folder;
 			controller_folder?: Folder;
-		}): Promise<C_Result> {
+		}): Promise<C_Result | C_AstryxMain> {
 			// common setup
 			const dawn_trace = debug.traceback("", 2).gsub("^%s+", "")[0].split("\n")[0];
 			S_AstryxLogger.log_info(`Dawn() called on ${RunService.IsClient() ? "clih" : "slih"}: > ${dawn_trace}`);
@@ -160,9 +166,9 @@ class C_AstryxMain {
 				}
 
 				const timeprecontroller = os.clock();
-				dawn_options.controller_folder.GetChildren().forEach((controller_script) => {
+				dawn_options.controller_folder.GetDescendants().forEach((controller_script) => {
 					if (controller_script.IsA("ModuleScript")) {
-						const script_class = require(controller_script) as new (e: T_AstryxMain) => C_Controller;
+						const script_class = require(controller_script) as new (e: T_Astryx) => C_Controller;
 						const new_controller = new script_class(Astryx);
 
 						if (!(new_controller instanceof C_Controller)) {
@@ -198,7 +204,7 @@ class C_AstryxMain {
 						});
 					} else {
 						S_AstryxLogger.log_info(
-							`why is there a non-modulescript in your controller folder??? absolute schidiot shghghghh`,
+							`non module script found in controller folder, skipping`,
 						);
 					}
 				});
@@ -209,10 +215,73 @@ class C_AstryxMain {
 				);
 
 				C_AstryxMain.intialized_buffers.client_dawn = true;
-				return Promise.resolve(new C_Success("client ok"));
+				return Promise.resolve(this.engine);
 			} else {
+				if (C_AstryxMain.intialized_buffers.server_dawn) {
+					S_AstryxLogger.log_error("Dawn() already called on server side, and just got called again");
+					return Promise.reject("Double-call of Dawn()") as Promise<C_Error>;
+				}
+
+				if (!dawn_options.services_folder) {
+					S_AstryxLogger.log_warn("bro where the fuck is your services folder(server), im leaving.");
+					return Promise.reject(new C_Error("no services_folder in server's dawn")) as Promise<C_Result>;
+				}
+
+				if (dawn_options.controller_folder)
+					S_AstryxLogger.log_warn(
+						`Dawn({}.controller_folder) is being used on the server: > ${debug.traceback("", 2).gsub("^%s+", "")[0]}`,
+					);
+
+				const timepreservice = os.clock();
+				dawn_options.services_folder.GetChildren().forEach((service_script) => {
+					if (service_script.IsA("ModuleScript")) {
+						const script_class = require(service_script) as new (e: T_Astryx) => C_Service;
+						const new_controller = new script_class(Astryx);
+
+						if (!(new_controller instanceof C_Service)) {
+							S_AstryxLogger.log_info(`${service_script.Name} not instance of C_Service`);
+							return Promise.reject(new C_Error("script in serivce wasn't instance of service :("));
+						}
+
+						S_AstryxLogger.log_info(`Made service ${service_script.Name}!`);
+						const lifecycle = new_controller as unknown as I_Lifecycle;
+						if (lifecycle.OnInit !== undefined) {
+							lifecycle.OnInit();
+							S_AstryxLogger.log_info(`Called ${service_script.Name}.OnInit()`);
+						}
+
+						task.spawn(() => {
+							if (lifecycle.OnStart !== undefined) {
+								lifecycle.OnStart();
+
+								S_AstryxLogger.log_info(`Called ${service_script.Name}.OnStart()`);
+							}
+							if (lifecycle.OnRender !== undefined) {
+								S_AstryxLogger.log_error(
+									`are you fucking stupid, ${service_script.Name} just called OnRender. go fuck yourself.`,
+								);
+							}
+							if (lifecycle.OnTick !== undefined) {
+								RunService.Heartbeat.Connect((dt) => lifecycle.OnTick?.(dt));
+								S_AstryxLogger.log_info(`Hooked ${service_script.Name}.OnTick() into Heartbeat`);
+							}
+
+							this.engine.INTERNAL.singletons.push(new_controller);
+						});
+					} else {
+						S_AstryxLogger.log_info(
+							`non module script found in service folder, ignoring`,
+						);
+					}
+				});
+				const timepostservice = os.clock();
+
+				S_AstryxLogger.log_bypass_info(
+					`intializing services took ${math.floor((timepostservice - timepreservice) * 1000)}ms`,
+				);
+
 				C_AstryxMain.intialized_buffers.server_dawn = true;
-				return Promise.resolve(new C_Success("server ok"));
+				return Promise.resolve(this.engine);
 			}
 		}
 	};
@@ -237,13 +306,17 @@ class C_AstryxMain {
 	Engine = new this.C_Engine(this);
 	Network = new this.C_Network();
 	Components = new this.C_Components(this);
+
+	UI = new AstryxUserInterface();
 }
 
-export type T_AstryxMain = {
+export type T_Astryx = {
 	INTERNAL: InstanceType<C_AstryxMain["C_INTERNAL"]>;
 	Engine: InstanceType<C_AstryxMain["C_Engine"]>;
 	Network: InstanceType<C_AstryxMain["C_Network"]>;
 	Components: InstanceType<C_AstryxMain["C_Components"]>;
+
+	UI: AstryxUserInterface;
 };
 
 export const Astryx = new C_AstryxMain();

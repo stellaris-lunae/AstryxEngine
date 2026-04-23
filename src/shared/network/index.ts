@@ -1,5 +1,5 @@
 import { Players, RunService } from "@rbxts/services";
-import S_AstryxLogger from "./logging";
+import S_AstryxLogger from "shared/logging";
 
 export namespace Network {
 	export class C_Signal<A extends unknown[]> {
