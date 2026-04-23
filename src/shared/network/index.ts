@@ -33,7 +33,7 @@ export namespace Network {
 	};
 
 	/**
-	 * Makes signals by types. Import from `shared/network` to avoid circular deps.
+	 * signal
 	 */
 	export function make_signals<S, C>(): T_NetworkSignalMap<S, C> {
 		S_AstryxLogger.log_info("make_signals called");
@@ -59,7 +59,7 @@ export namespace Network {
 	}
 
 	/**
-	 * Makes remote functions by types. Import from `shared/network` to avoid circular deps.
+	 * remote functiosn wow!
 	 */
 	export function make_remote_functions<S, C>(): T_NetworkFunctionMap<S, C> {
 		S_AstryxLogger.log_info("make_remote_functions called");
