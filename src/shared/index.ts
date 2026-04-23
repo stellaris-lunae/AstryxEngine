@@ -1,4 +1,4 @@
-import { ReplicatedStorage, RunService } from "@rbxts/services";
+import { RunService } from "@rbxts/services";
 import S_AstryxLogger from "./logging";
 import Signal from "@rbxts/signal";
 import { C_Component } from "./components";
@@ -6,48 +6,17 @@ import { C_Error, C_Result, C_Success } from "./result";
 import { C_Singleton } from "./singleton";
 import { C_Controller } from "./singleton/controller";
 import { C_Service } from "./singleton/service";
-import { t } from "@rbxts/t";
 import { AstryxUserInterface } from "./ui";
 import { Network } from "./network";
+import { I_Lifecycle } from "./type";
 
 /** dying schizophrenic delusions of a C++ dev making a roblox game engine without a TS transformer* **/
 /** typescript transformer is in the works though 🤫 **/
-
-type T_NetworkSignalMap<S, C> = {
-	[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void ? Network.C_Signal<A> : never;
-};
-
-type T_NetworkFunctionMap<S, C> = {
-	[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void
-		? Network.C_Function<A>
-		: never;
-};
 
 class C_AstryxMain {
 	log_info = S_AstryxLogger.log_info;
 	log_warn = S_AstryxLogger.log_warn;
 	log_error = S_AstryxLogger.log_error;
-
-	static NETWORK_FOLDER = (() => {
-		let ret: Folder;
-
-		const network_name = `ASTRYX.NETWORK`;
-
-		if (RunService.IsServer()) {
-			const net = ReplicatedStorage.FindFirstChild(network_name);
-			if (!net) {
-				ret = new Instance("Folder");
-				ret.Name = network_name;
-				ret.Parent = ReplicatedStorage;
-			} else {
-				ret = net as Folder;
-			}
-		} else {
-			ret = ReplicatedStorage.WaitForChild(network_name) as Folder;
-		}
-
-		return ret;
-	})();
 
 	static intialized_buffers = {
 		components: false,
@@ -77,59 +46,6 @@ class C_AstryxMain {
 		conns: Map<string, Signal> = new Map();
 		components: Array<[instance: Instance, components: Array<C_Component>]> = [];
 		singletons: Array<C_Singleton> = [];
-	};
-
-	/** @hidden */
-	C_Network = class {
-		constructor() {}
-
-		/**
-		 * makes signals by types
-		 *
-		 * @param ServerShenanigans server shite to make
-		 * @param ClientShenanigans blah blah blah you know the deal
-		 */
-		make_signals<S, C>(): T_NetworkSignalMap<S, C> {
-			S_AstryxLogger.log_info("make_signals called");
-
-			const cache = new Map<string, Network.C_Signal<unknown[]>>();
-			const get_or_create = (key: unknown): Network.C_Signal<unknown[]> => {
-				if (!t.string(key)) {
-					error(`make_signals expected string key, got ${typeOf(key)}`);
-				}
-
-				if (!cache.has(key)) {
-					S_AstryxLogger.log_info(`make_signals: creating signal for "${key}"`);
-					cache.set(key, new Network.C_Signal(key, C_AstryxMain.NETWORK_FOLDER));
-				} else {
-					S_AstryxLogger.log_info(`make_signals: reusing signal for "${key}"`);
-				}
-				return cache.get(key)!;
-			};
-
-			return setmetatable({} as T_NetworkSignalMap<S, C>, {
-				__index: (_self: unknown, key: unknown) => get_or_create(key),
-			}) as T_NetworkSignalMap<S, C>;
-		}
-
-		make_remote_functions<S, C>(): T_NetworkFunctionMap<S, C> {
-			S_AstryxLogger.log_info("make_remote_functions called");
-
-			const cache = new Map<string, Network.C_Function<unknown[]>>();
-			const get_or_create = (key: string): Network.C_Function<unknown[]> => {
-				if (!cache.has(key)) {
-					S_AstryxLogger.log_info(`make_signals: creating signal for "${key}"`);
-					cache.set(key, new Network.C_Function(key, C_AstryxMain.NETWORK_FOLDER));
-				} else {
-					S_AstryxLogger.log_info(`make_signals: reusing signal for "${key}"`);
-				}
-				return cache.get(key) as Network.C_Function<unknown[]>;
-			};
-
-			return setmetatable({} as T_NetworkFunctionMap<S, C>, {
-				__index: (_self: unknown, key: unknown) => get_or_create(key as string),
-			}) as T_NetworkFunctionMap<S, C>;
-		}
 	};
 
 	/** @hidden */
@@ -203,9 +119,7 @@ class C_AstryxMain {
 							this.engine.INTERNAL.singletons.push(new_controller);
 						});
 					} else {
-						S_AstryxLogger.log_info(
-							`non module script found in controller folder, skipping`,
-						);
+						S_AstryxLogger.log_info(`non module script found in controller folder, skipping`);
 					}
 				});
 				const timepostcontroller = os.clock();
@@ -269,9 +183,7 @@ class C_AstryxMain {
 							this.engine.INTERNAL.singletons.push(new_controller);
 						});
 					} else {
-						S_AstryxLogger.log_info(
-							`non module script found in service folder, ignoring`,
-						);
+						S_AstryxLogger.log_info(`non module script found in service folder, ignoring`);
 					}
 				});
 				const timepostservice = os.clock();
@@ -304,7 +216,7 @@ class C_AstryxMain {
 	INTERNAL = new this.C_INTERNAL();
 
 	Engine = new this.C_Engine(this);
-	Network = new this.C_Network();
+	Network = Network;
 	Components = new this.C_Components(this);
 
 	UI = new AstryxUserInterface();
@@ -313,7 +225,7 @@ class C_AstryxMain {
 export type T_Astryx = {
 	INTERNAL: InstanceType<C_AstryxMain["C_INTERNAL"]>;
 	Engine: InstanceType<C_AstryxMain["C_Engine"]>;
-	Network: InstanceType<C_AstryxMain["C_Network"]>;
+	Network: typeof Network;
 	Components: InstanceType<C_AstryxMain["C_Components"]>;
 
 	UI: AstryxUserInterface;

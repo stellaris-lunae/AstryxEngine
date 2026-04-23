@@ -1,4 +1,4 @@
-import { I_Lifecycle } from "shared/typing";
+import { I_Lifecycle } from "shared/type";
 import { C_Singleton } from ".";
 import { T_Astryx } from "shared";
 

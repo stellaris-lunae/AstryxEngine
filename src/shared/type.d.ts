@@ -1,7 +1,7 @@
 /**
  * All of the lifecycle shite
  */
-declare interface I_Lifecycle {
+export interface I_Lifecycle {
 	/**
 	 * called when components are started
 	 * parallel when compared to oninit, doesn't yield

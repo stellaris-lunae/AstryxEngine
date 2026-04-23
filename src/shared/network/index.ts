@@ -1,7 +1,85 @@
-import { Players, RunService } from "@rbxts/services";
+import { Players, ReplicatedStorage, RunService } from "@rbxts/services";
+import { t } from "@rbxts/t";
 import S_AstryxLogger from "shared/logging";
 
 export namespace Network {
+	export const NETWORK_FOLDER: Folder = (() => {
+		let ret: Folder;
+
+		const network_name = `ASTRYX.NETWORK`;
+
+		if (RunService.IsServer()) {
+			const net = ReplicatedStorage.FindFirstChild(network_name);
+			if (!net) {
+				ret = new Instance("Folder");
+				ret.Name = network_name;
+				ret.Parent = ReplicatedStorage;
+			} else {
+				ret = net as Folder;
+			}
+		} else {
+			ret = ReplicatedStorage.WaitForChild(network_name) as Folder;
+		}
+
+		return ret;
+	})();
+
+	type T_NetworkSignalMap<S, C> = {
+		[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void ? C_Signal<A> : never;
+	};
+
+	type T_NetworkFunctionMap<S, C> = {
+		[K in keyof (S & C)]: (S & C)[K] extends (...args: infer A extends unknown[]) => void ? C_Function<A> : never;
+	};
+
+	/**
+	 * Makes signals by types. Import from `shared/network` to avoid circular deps.
+	 */
+	export function make_signals<S, C>(): T_NetworkSignalMap<S, C> {
+		S_AstryxLogger.log_info("make_signals called");
+
+		const cache = new Map<string, C_Signal<unknown[]>>();
+		const get_or_create = (key: unknown): C_Signal<unknown[]> => {
+			if (!t.string(key)) {
+				error(`make_signals expected string key, got ${typeOf(key)}`);
+			}
+
+			if (!cache.has(key)) {
+				S_AstryxLogger.log_info(`make_signals: creating signal for "${key}"`);
+				cache.set(key, new C_Signal(key, NETWORK_FOLDER));
+			} else {
+				S_AstryxLogger.log_info(`make_signals: reusing signal for "${key}"`);
+			}
+			return cache.get(key)!;
+		};
+
+		return setmetatable({} as T_NetworkSignalMap<S, C>, {
+			__index: (_self: unknown, key: unknown) => get_or_create(key),
+		}) as T_NetworkSignalMap<S, C>;
+	}
+
+	/**
+	 * Makes remote functions by types. Import from `shared/network` to avoid circular deps.
+	 */
+	export function make_remote_functions<S, C>(): T_NetworkFunctionMap<S, C> {
+		S_AstryxLogger.log_info("make_remote_functions called");
+
+		const cache = new Map<string, C_Function<unknown[]>>();
+		const get_or_create = (key: string): C_Function<unknown[]> => {
+			if (!cache.has(key)) {
+				S_AstryxLogger.log_info(`make_remote_functions: creating function for "${key}"`);
+				cache.set(key, new C_Function(key, NETWORK_FOLDER));
+			} else {
+				S_AstryxLogger.log_info(`make_remote_functions: reusing function for "${key}"`);
+			}
+			return cache.get(key) as C_Function<unknown[]>;
+		};
+
+		return setmetatable({} as T_NetworkFunctionMap<S, C>, {
+			__index: (_self: unknown, key: unknown) => get_or_create(key as string),
+		}) as T_NetworkFunctionMap<S, C>;
+	}
+
 	export class C_Signal<A extends unknown[]> {
 		private remote: RemoteEvent;
 
